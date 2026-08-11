@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Tower Drop</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="game-root">
+  <canvas id="bg-canvas"></canvas>
+  <canvas id="game-canvas"></canvas>
+
+  <!-- GAMEPLAY HUD — intentionally minimal: LEVEL top-left, HOME + SOUND top-right, nothing else -->
+  <div id="hud" class="game-hud">
+    <div class="hud-level-text">LEVEL <span id="hud-level">1</span></div>
+    <div class="hud-icon-row">
+      <button id="btn-home-game" class="hud-icon-btn" aria-label="Home">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
+          <path d="M4 11.5 12 4l8 7.5" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M6.5 10.2V19a1 1 0 0 0 1 1h3v-5.5h3V20h3a1 1 0 0 0 1-1v-8.8" fill="#c9a8ff" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <button id="btn-sound-game" class="hud-icon-btn" aria-label="Toggle sound">
+        <svg id="sound-icon-game" viewBox="0 0 24 24" width="24" height="24" fill="none">
+          <path d="M4 9v6h4l5 4V5L8 9H4z" fill="#4fd1ff" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+          <path class="sound-wave" d="M16.3 8.7a5 5 0 0 1 0 6.6" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+          <path class="sound-wave" d="M18.8 6.2a9 9 0 0 1 0 11.6" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+          <path class="sound-slash" d="M16 8l5 8M21 8l-5 8" stroke="#ff6b6b" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="level-banner"></div>
+  <div id="swipe-area"></div>
+
+  <!-- HOME -->
+  <div id="overlay-start" class="overlay show screen-overlay screen-home">
+    <div class="home-scene">
+      <div class="home-decor" aria-hidden="true">
+        <div class="decor-brick decor-brick-a"></div>
+        <div class="decor-brick decor-brick-b"></div>
+        <div class="decor-brick decor-brick-c"></div>
+      </div>
+
+      <h1 class="game-logo" id="game-logo">
+        <span class="logo-line logo-tower">TOWER</span>
+        <span class="logo-line logo-drop">DROP</span>
+      </h1>
+
+      <div class="hero-ball-wrap">
+        <canvas id="preview-canvas" width="280" height="170"></canvas>
+      </div>
+
+      <div class="level-badge">
+        <span class="badge-star">⭐</span>
+        <span>LEVEL <span id="start-level-num">1</span></span>
+        <span class="badge-star">⭐</span>
+      </div>
+
+      <button id="btn-start-play" class="primary-button play-button">
+        <span class="play-icon">▶</span> PLAY
+      </button>
+
+      <div class="home-secondary-row">
+        <button id="btn-open-levels" class="secondary-button">🗺 LEVELS</button>
+        <button id="btn-open-skins" class="secondary-button">🎨 SKINS</button>
+      </div>
+
+      <div class="home-icon-row">
+        <button id="btn-sound" class="icon-button" aria-label="Toggle sound">🔊</button>
+        <button id="btn-settings" class="icon-button" aria-label="Settings">⚙</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LEVEL SELECT -->
+  <div id="overlay-levels" class="overlay screen-overlay">
+    <div class="panel panel-tall">
+      <h1 class="panel-title">SELECT LEVEL</h1>
+      <div class="level-pages-viewport">
+        <div id="level-pages" class="level-pages"></div>
+      </div>
+      <div class="level-pager">
+        <button id="btn-page-prev" class="pager-arrow" aria-label="Previous page">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div id="page-dots" class="page-dots"></div>
+        <button id="btn-page-next" class="pager-arrow" aria-label="Next page">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <button id="btn-levels-back" class="secondary-button panel-back-btn">BACK</button>
+    </div>
+  </div>
+
+  <!-- SKINS (stub) -->
+  <div id="overlay-skins" class="overlay screen-overlay">
+    <div class="panel">
+      <h1 class="panel-title">SKINS</h1>
+      <div class="skins-preview">
+        <div class="skin-ball-demo"></div>
+      </div>
+      <p class="panel-subtitle">More ball styles are on the way!</p>
+      <button id="btn-skins-back" class="secondary-button">BACK</button>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="overlay-settings" class="overlay screen-overlay">
+    <div class="panel">
+      <h1 class="panel-title">SETTINGS</h1>
+      <button id="btn-sound-settings" class="secondary-button settings-row-btn">🔊 SOUND: <span id="sound-settings-state">ON</span></button>
+      <button id="btn-reset-progress" class="secondary-button settings-row-btn">🗑 RESET PROGRESS</button>
+      <button id="btn-settings-back" class="secondary-button">BACK</button>
+    </div>
+  </div>
+
+  <!-- LEVEL CLEAR — no modal/stats; gameplay stays visible behind it -->
+  <div id="overlay-win" class="overlay screen-overlay overlay-minimal">
+    <div class="clear-screen">
+      <h1 class="clear-title" id="win-title">LEVEL CLEAR</h1>
+      <div class="clear-buttons">
+        <button id="btn-replay-win" class="circle-btn" aria-label="Restart">
+          <svg viewBox="0 0 24 24" width="26" height="26">
+            <path d="M18.5 12a6.5 6.5 0 1 1-2-4.7" fill="none" stroke="#ffd166" stroke-width="3" stroke-linecap="round"/>
+            <path d="M18.5 5.5v4.2h-4.2" fill="#ffd166" stroke="#ffd166" stroke-width="1.6" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button id="btn-continue" class="circle-btn circle-btn-lg" aria-label="Next level">
+          <svg viewBox="0 0 24 24" width="32" height="32">
+            <path d="M8 5.5v13l11-6.5-11-6.5z" fill="#ff8fd6" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button id="btn-home-win" class="circle-btn" aria-label="Home">
+          <svg viewBox="0 0 24 24" width="26" height="26">
+            <path d="M4 11.5 12 4l8 7.5" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M6.5 10.2V19a1 1 0 0 0 1 1h3v-5.5h3V20h3a1 1 0 0 0 1-1v-8.8" fill="#4fd1ff" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GAME OVER — no modal/stats; gameplay stays visible behind it -->
+  <div id="overlay-lose" class="overlay screen-overlay overlay-minimal">
+    <div class="clear-screen">
+      <h1 class="clear-title clear-title-oops">TRY AGAIN</h1>
+      <div class="clear-buttons">
+        <button id="btn-restart" class="circle-btn circle-btn-lg" aria-label="Restart">
+          <svg viewBox="0 0 24 24" width="32" height="32">
+            <path d="M18.5 12a6.5 6.5 0 1 1-2-4.7" fill="none" stroke="#ffd166" stroke-width="3.4" stroke-linecap="round"/>
+            <path d="M18.5 5.5v4.2h-4.2" fill="#ffd166" stroke="#ffd166" stroke-width="1.8" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button id="btn-menu" class="circle-btn" aria-label="Home">
+          <svg viewBox="0 0 24 24" width="26" height="26">
+            <path d="M4 11.5 12 4l8 7.5" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M6.5 10.2V19a1 1 0 0 0 1 1h3v-5.5h3V20h3a1 1 0 0 0 1-1v-8.8" fill="#4fd1ff" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="levels.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
