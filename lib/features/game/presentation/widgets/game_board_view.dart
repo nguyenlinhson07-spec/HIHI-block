@@ -58,6 +58,13 @@ class GameBoardView extends StatelessWidget {
         child: GridView.builder(
           padding: EdgeInsets.zero,
           physics: const NeverScrollableScrollPhysics(),
+          // The board never scrolls, so none of the sliver's per-child
+          // bookkeeping earns its keep. Left on, each of the 64 cells was
+          // wrapped in five extra widgets — keep-alive, selection and repaint
+          // machinery — that rebuilt along with it.
+          addAutomaticKeepAlives: false,
+          addRepaintBoundaries: false,
+          addSemanticIndexes: false,
           itemCount: board.size * board.size,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: board.size,
@@ -77,9 +84,10 @@ class GameBoardView extends StatelessWidget {
                     : CellTileStyle.previewInvalid,
               );
             }
+            if (!cell.occupied) return BlockCellTile.vacant;
             return BlockCellTile(
               color: cell.color,
-              style: cell.occupied ? CellTileStyle.filled : CellTileStyle.empty,
+              style: CellTileStyle.filled,
             );
           },
         ),

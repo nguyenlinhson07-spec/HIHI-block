@@ -93,6 +93,14 @@ class _GameScreenState extends State<GameScreen> {
   /// Transient overlays, each of which takes itself away when it finishes.
   final List<_ActiveEffect> _overlays = <_ActiveEffect>[];
 
+  /// Geometry captured once when a drag starts.
+  ///
+  /// The board does not move or resize while a block is in the air, so
+  /// resolving the render objects on every pointer move — two GlobalKey
+  /// lookups and two walks up the render tree — bought nothing. Everything a
+  /// move needs is now plain arithmetic on these.
+  _DragGeometry? _dragGeometry;
+
   @override
   void initState() {
     super.initState();
@@ -146,28 +154,50 @@ class _GameScreenState extends State<GameScreen> {
         Offset(span.width / 2, span.height / 2 + GameConstants.dragLift);
   }
 
+  /// Resolves the render objects once, at the start of a drag.
+  ///
+  /// Returns `null` if the board has not been laid out yet, in which case the
+  /// drag simply runs without a preview rather than crashing.
+  _DragGeometry? _captureGeometry(BlockPiece piece) {
+    final RenderBox? board = _boardBox;
+    final RenderBox? stack = _stackBox;
+    if (board == null || stack == null) return null;
+
+    final BoardGeometry geo = BoardGeometry(side: board.size.width);
+    return _DragGeometry(
+      geometry: geo,
+      boardGlobalOrigin: board.localToGlobal(Offset.zero),
+      stackGlobalOrigin: stack.localToGlobal(Offset.zero),
+      span: geo.sizeOfSpan(piece.rowCount, piece.columnCount),
+      grid: Rect.fromLTWH(
+        geo.padding,
+        geo.padding,
+        board.size.width - 2 * geo.padding,
+        board.size.height - 2 * geo.padding,
+      ),
+    );
+  }
+
   /// Board anchor for the current pointer, or `null` when the block is not
   /// over the board at all.
-  BlockCell? _anchorFor(BlockPiece piece, Offset pointer) {
-    final RenderBox? box = _boardBox;
-    final BoardGeometry? geo = _geometry;
-    if (box == null || geo == null) return null;
+  ///
+  /// Pure arithmetic on the cached geometry — no render-tree access.
+  BlockCell? _anchorFor(Offset pointer) {
+    final _DragGeometry? cached = _dragGeometry;
+    if (cached == null) return null;
 
-    final Size span = geo.sizeOfSpan(piece.rowCount, piece.columnCount);
-    final Offset localTopLeft = box.globalToLocal(
-      _ghostTopLeft(piece, pointer, geo),
-    );
+    final Offset localTopLeft =
+        pointer -
+        cached.boardGlobalOrigin -
+        Offset(
+          cached.span.width / 2,
+          cached.span.height / 2 + GameConstants.dragLift,
+        );
 
     // No preview at all until the block actually overlaps the grid.
-    final Rect grid = Rect.fromLTWH(
-      geo.padding,
-      geo.padding,
-      box.size.width - 2 * geo.padding,
-      box.size.height - 2 * geo.padding,
-    );
-    if (!(localTopLeft & span).overlaps(grid)) return null;
+    if (!(localTopLeft & cached.span).overlaps(cached.grid)) return null;
 
-    return geo.anchorFor(localTopLeft);
+    return cached.geometry.anchorFor(localTopLeft);
   }
 
   /// Centre of tray slot [slotIndex], in overlay coordinates.
@@ -191,40 +221,35 @@ class _GameScreenState extends State<GameScreen> {
     if (!_controller.startDrag(slotIndex, globalPosition)) return;
     final BlockPiece? piece = _controller.drag?.piece;
     if (piece == null) return;
-    _controller.updateDrag(
-      globalPosition,
-      anchor: _anchorFor(piece, globalPosition),
-    );
+
+    _dragGeometry = _captureGeometry(piece);
+    _controller.updateDrag(globalPosition, anchor: _anchorFor(globalPosition));
   }
 
   void _onPointerMove(PointerMoveEvent event) {
-    final DragSession? drag = _controller.drag;
-    if (drag == null) return;
-    _controller.updateDrag(
-      event.position,
-      anchor: _anchorFor(drag.piece, event.position),
-    );
+    if (!_controller.isDragging) return;
+    _controller.updateDrag(event.position, anchor: _anchorFor(event.position));
   }
 
   void _onPointerUp(PointerUpEvent event) {
     // Capture where the block was before the controller drops the session, so
     // a rejected block can fly home from exactly where it was let go.
     final DragSession? drag = _controller.drag;
-    final BoardGeometry? geo = _geometry;
-    final RenderBox? stack = _stackBox;
+    final _DragGeometry? cached = _dragGeometry;
     Offset? releasedAt;
-    if (drag != null && geo != null && stack != null) {
-      releasedAt = stack.globalToLocal(
-        _ghostTopLeft(drag.piece, drag.pointer, geo),
-      );
+    if (drag != null && cached != null) {
+      releasedAt =
+          _ghostTopLeft(drag.piece, drag.pointer, cached.geometry) -
+          cached.stackGlobalOrigin;
     }
 
     // An invalid release simply ends the drag: the board is untouched and the
     // piece stays in its tray slot.
     final bool placed = _controller.endDrag();
-    if (!placed && drag != null && releasedAt != null && geo != null) {
-      _startReturnGhost(drag, releasedAt, geo);
+    if (!placed && drag != null && releasedAt != null && cached != null) {
+      _startReturnGhost(drag, releasedAt, cached.geometry);
     }
+    _dragGeometry = null;
   }
 
   // --- Effects ------------------------------------------------------------
@@ -398,7 +423,10 @@ class _GameScreenState extends State<GameScreen> {
           child: Listener(
             onPointerMove: _onPointerMove,
             onPointerUp: _onPointerUp,
-            onPointerCancel: (PointerCancelEvent _) => _controller.cancelDrag(),
+            onPointerCancel: (PointerCancelEvent _) {
+              _controller.cancelDrag();
+              _dragGeometry = null;
+            },
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
@@ -412,28 +440,22 @@ class _GameScreenState extends State<GameScreen> {
                         horizontal: GameConstants.screenHorizontalPadding,
                         vertical: GameConstants.screenVerticalPadding,
                       ),
-                      child: AnimatedBuilder(
-                        animation: _controller,
-                        builder: (BuildContext context, _) =>
-                            _buildContent(context),
-                      ),
+                      child: _buildContent(context),
                     ),
                     // Effect overlays sit above the board but below the drag
                     // layer, and each repaints only its own bounds.
                     ..._overlays.map((_ActiveEffect e) => e.child),
+                    _buildDragLayer(),
                     AnimatedBuilder(
                       animation: _controller,
-                      builder: (BuildContext context, _) => Stack(
-                        children: <Widget>[
-                          ..._buildDragLayer(),
-                          if (_controller.isGameOver)
-                            GameOverOverlay(
+                      builder: (BuildContext context, _) =>
+                          _controller.isGameOver
+                          ? GameOverOverlay(
                               score: _controller.score,
                               bestScore: _controller.bestScore,
                               onPlayAgain: _controller.reset,
-                            ),
-                        ],
-                      ),
+                            )
+                          : const SizedBox.shrink(),
                     ),
                   ],
                 ),
@@ -445,13 +467,22 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
+  /// The playfield column.
+  ///
+  /// Each row listens to the narrowest thing it depends on, so a pointer move
+  /// cannot reach the header, the tray or the settings button. The column
+  /// itself is built once and is not rebuilt by drag activity at all.
   Widget _buildContent(BuildContext context) {
-    final DragSession? drag = _controller.drag;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        GameHeader(score: _controller.score, bestScore: _controller.bestScore),
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (BuildContext context, _) => GameHeader(
+            score: _controller.score,
+            bestScore: _controller.bestScore,
+          ),
+        ),
         // The board is vertically centred in whatever space is left between
         // the header and the tray, and never taller than it is wide.
         Expanded(
@@ -459,25 +490,41 @@ class _GameScreenState extends State<GameScreen> {
             child: SingleChildScrollView(
               physics: const NeverScrollableScrollPhysics(),
               child: RepaintBoundary(
-                child: GameBoardView(
-                  board: _controller.board,
-                  boardKey: _boardKey,
-                  previewCells: _controller.previewCells,
-                  previewIsValid: _controller.previewIsValid,
-                  previewColor: drag?.piece.color,
+                // Rebuilds when the board changes or when the preview snaps to
+                // a different cell — not on every pointer move, which used to
+                // rebuild all 64 cells at the refresh rate.
+                child: AnimatedBuilder(
+                  animation: Listenable.merge(<Listenable>[
+                    _controller,
+                    _controller.previewRevision,
+                  ]),
+                  builder: (BuildContext context, _) => GameBoardView(
+                    board: _controller.board,
+                    boardKey: _boardKey,
+                    previewCells: _controller.previewCells,
+                    previewIsValid: _controller.previewIsValid,
+                    previewColor: _controller.drag?.piece.color,
+                  ),
                 ),
               ),
             ),
           ),
         ),
-        ComboBadge(combo: _controller.combo),
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (BuildContext context, _) =>
+              ComboBadge(combo: _controller.combo),
+        ),
         const SizedBox(height: GameConstants.stackSpacing),
         RepaintBoundary(
-          child: BlockTray(
-            key: _trayKey,
-            pieces: _controller.tray,
-            onSlotDragStart: _onSlotDragStart,
-            draggingSlotIndex: drag?.slotIndex,
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (BuildContext context, _) => BlockTray(
+              key: _trayKey,
+              pieces: _controller.tray,
+              onSlotDragStart: _onSlotDragStart,
+              draggingSlotIndex: _controller.drag?.slotIndex,
+            ),
           ),
         ),
         const SizedBox(height: GameConstants.stackSpacing),
@@ -489,33 +536,80 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  List<Widget> _buildDragLayer() {
-    final DragSession? drag = _controller.drag;
-    final BoardGeometry? geo = _geometry;
-    final RenderBox? stack = _stackBox;
-    if (drag == null || geo == null || stack == null) return const <Widget>[];
+  /// The block that follows the finger.
+  ///
+  /// Driven by [GameController.pointerPosition] alone and sitting in its own
+  /// repaint boundary, so following the pointer touches nothing else on
+  /// screen. No tween anywhere on this path: the position painted is the
+  /// position reported by the last pointer event.
+  Widget _buildDragLayer() {
+    return RepaintBoundary(
+      child: ValueListenableBuilder<Offset?>(
+        valueListenable: _controller.pointerPosition,
+        builder: (BuildContext context, Offset? pointer, _) {
+          final DragSession? drag = _controller.drag;
+          final _DragGeometry? cached = _dragGeometry;
+          if (pointer == null || drag == null || cached == null) {
+            return const SizedBox.shrink();
+          }
 
-    // The ghost squares are inset inside their cells, so nudge the whole
-    // block by half the inset to keep it centred on the preview.
-    final double ghostCell = geo.cellSize * GameConstants.dragGhostScale;
-    final double inset = (geo.cellSize - ghostCell) / 2;
-    final Offset position = stack.globalToLocal(
-      _ghostTopLeft(drag.piece, drag.pointer, geo),
-    );
-    return <Widget>[
-      Positioned(
-        left: position.dx + inset,
-        top: position.dy + inset,
-        child: DragGhost(
-          piece: drag.piece,
-          cellSize: ghostCell,
-          pitch: geo.pitch,
-          isOverBoard: drag.isOverBoard,
-          isValid: drag.canDrop,
-        ),
+          final BoardGeometry geo = cached.geometry;
+          // The ghost squares are inset inside their cells, so nudge the
+          // whole block by half the inset to keep it centred on the preview.
+          final double ghostCell = geo.cellSize * GameConstants.dragGhostScale;
+          final double inset = (geo.cellSize - ghostCell) / 2;
+          final Offset position =
+              _ghostTopLeft(drag.piece, pointer, geo) -
+              cached.stackGlobalOrigin;
+
+          return Stack(
+            children: <Widget>[
+              Positioned(
+                left: position.dx + inset,
+                top: position.dy + inset,
+                child: DragGhost(
+                  piece: drag.piece,
+                  cellSize: ghostCell,
+                  pitch: geo.pitch,
+                  isOverBoard: drag.isOverBoard,
+                  isValid: drag.canDrop,
+                ),
+              ),
+            ],
+          );
+        },
       ),
-    ];
+    );
   }
+}
+
+/// Everything about the board's position and the dragged piece's size that
+/// stays constant for the length of one drag.
+///
+/// Captured once at drag start so pointer moves are arithmetic rather than
+/// render-tree queries.
+class _DragGeometry {
+  const _DragGeometry({
+    required this.geometry,
+    required this.boardGlobalOrigin,
+    required this.stackGlobalOrigin,
+    required this.span,
+    required this.grid,
+  });
+
+  final BoardGeometry geometry;
+
+  /// Global position of the board's top-left corner.
+  final Offset boardGlobalOrigin;
+
+  /// Global position of the overlay stack's top-left corner.
+  final Offset stackGlobalOrigin;
+
+  /// Pixel size of the dragged piece's bounding box.
+  final Size span;
+
+  /// The playable grid, in board-local coordinates.
+  final Rect grid;
 }
 
 /// A transient overlay plus the token used to take it away again.

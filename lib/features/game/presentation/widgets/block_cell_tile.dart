@@ -37,6 +37,14 @@ class BlockCellTile extends StatelessWidget {
   /// Adds a drop shadow so a dragged block reads as lifted off the board.
   final bool elevated;
 
+  /// The one empty cell.
+  ///
+  /// Every vacant square on the board looks the same, so they can all be the
+  /// *same instance*: Flutter skips rebuilding an element whose new widget is
+  /// identical to its old one, which takes most of the board out of the work
+  /// whenever the grid rebuilds.
+  static const BlockCellTile vacant = BlockCellTile();
+
   @override
   Widget build(BuildContext context) {
     final BorderRadius shape = BorderRadius.circular(

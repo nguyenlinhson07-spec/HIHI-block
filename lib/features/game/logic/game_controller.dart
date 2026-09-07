@@ -76,6 +76,14 @@ class GameController extends ChangeNotifier {
       StreamController<GameEffect>.broadcast();
   int _nextEffectId = 1;
 
+  // Drag updates arrive at the display's refresh rate. Broadcasting all of
+  // them through notifyListeners() would rebuild the header, the tray and all
+  // 64 board cells on every frame, so the two things that actually change
+  // during a drag get their own fine-grained notifiers and the general
+  // listener is left alone.
+  final ValueNotifier<Offset?> _pointer = ValueNotifier<Offset?>(null);
+  final ValueNotifier<int> _previewRevision = ValueNotifier<int>(0);
+
   GameBoard get board => _board;
 
   /// Tray slots; a `null` entry is a slot whose piece has been played.
@@ -102,6 +110,18 @@ class GameController extends ChangeNotifier {
   /// A broadcast stream rather than state, so a rebuild cannot replay an
   /// effect. Every event carries a unique increasing id.
   Stream<GameEffect> get effects => _effects.stream;
+
+  /// The live pointer position while a block is being dragged, `null`
+  /// otherwise.
+  ///
+  /// Fires on every pointer move. Only the floating block listens to it, so a
+  /// move repaints one layer instead of rebuilding the screen.
+  ValueListenable<Offset?> get pointerPosition => _pointer;
+
+  /// Bumped whenever the previewed cells or their validity change — which is
+  /// far rarer than pointer movement, since a finger crosses many pixels per
+  /// cell. The board listens to this instead of to every move.
+  ValueListenable<int> get previewRevision => _previewRevision;
 
   /// No piece left in the tray fits anywhere on the board.
   bool get isGameOver => _isGameOver;
@@ -139,6 +159,8 @@ class GameController extends ChangeNotifier {
     if (piece == null) return false;
 
     _drag = DragSession(slotIndex: slotIndex, piece: piece, pointer: pointer);
+    _pointer.value = pointer;
+    _previewRevision.value++;
     _emit(GameEffectType.dragStarted, color: piece.color);
     notifyListeners();
     return true;
@@ -151,18 +173,32 @@ class GameController extends ChangeNotifier {
     final DragSession? current = _drag;
     if (current == null) return;
 
-    final PlacementResult? placement = anchor == null
-        ? null
-        : _board.evaluate(current.piece, anchor.row, anchor.column);
+    final bool anchorChanged = anchor != current.anchor;
+    if (!anchorChanged && pointer == current.pointer) return;
 
-    _drag = anchor == null
-        ? current.copyWith(pointer: pointer, clearAnchor: true)
-        : current.copyWith(
-            pointer: pointer,
-            anchor: anchor,
-            placement: placement,
-          );
-    notifyListeners();
+    if (anchorChanged) {
+      // Placement is only re-evaluated when the block actually snaps to a
+      // different cell. Sliding a finger within one cell — most frames of a
+      // real drag — costs nothing but an offset update.
+      final PlacementResult? placement = anchor == null
+          ? null
+          : _board.evaluate(current.piece, anchor.row, anchor.column);
+
+      _drag = anchor == null
+          ? current.copyWith(pointer: pointer, clearAnchor: true)
+          : current.copyWith(
+              pointer: pointer,
+              anchor: anchor,
+              placement: placement,
+            );
+      _previewRevision.value++;
+    } else {
+      _drag = current.copyWith(pointer: pointer);
+    }
+
+    // Deliberately not notifyListeners(): the block follows [pointerPosition]
+    // and the board follows [previewRevision], so nothing else has to wake up.
+    _pointer.value = pointer;
   }
 
   /// Releases the piece. Commits it to the board when the preview is valid,
@@ -177,6 +213,7 @@ class GameController extends ChangeNotifier {
     if (!current.canDrop || anchor == null) {
       // Invalid release: nothing changes, not even the combo streak.
       _drag = null;
+      _endDragNotifiers();
       _emit(GameEffectType.invalid, color: current.piece.color);
       notifyListeners();
       return false;
@@ -185,6 +222,7 @@ class GameController extends ChangeNotifier {
     _resolveTurn(current.piece, anchor);
     _tray = List<BlockPiece?>.of(_tray)..[current.slotIndex] = null;
     _drag = null;
+    _endDragNotifiers();
 
     // Refill only once the whole tray is spent, then judge the new tray
     // against the board the placement left behind.
@@ -314,6 +352,8 @@ class GameController extends ChangeNotifier {
   @override
   void dispose() {
     _effects.close();
+    _pointer.dispose();
+    _previewRevision.dispose();
     super.dispose();
   }
 
@@ -321,7 +361,15 @@ class GameController extends ChangeNotifier {
   void cancelDrag() {
     if (_drag == null) return;
     _drag = null;
+    _endDragNotifiers();
     notifyListeners();
+  }
+
+  /// Puts the drag notifiers back to rest so the block layer clears itself and
+  /// the board drops its preview.
+  void _endDragNotifiers() {
+    _pointer.value = null;
+    _previewRevision.value++;
   }
 
   // --- Session ------------------------------------------------------------
@@ -333,6 +381,7 @@ class GameController extends ChangeNotifier {
     _score = 0;
     _combo = 0;
     _drag = null;
+    _endDragNotifiers();
     _lastTurn = null;
     _isGameOver = false;
     _tray = _generator.generateTray(_board, _score);
