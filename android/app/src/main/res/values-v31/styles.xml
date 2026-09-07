@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ ignores windowBackground for the launch window and shows
+         the platform splash screen instead, which defaults to the system's
+         (usually white) background. These two attributes point it at the
+         game's own dark ground and its own mark, so the cold-start sequence
+         is dark from the very first frame. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/hihi_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+    </style>
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@color/hihi_background</item>
+    </style>
+</resources>

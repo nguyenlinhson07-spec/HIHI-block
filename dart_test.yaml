@@ -1,0 +1,12 @@
+tags:
+  # Golden-based screenshot capture. Font rendering differs per machine, so it
+  # is skipped in normal runs. Regenerate with:
+  #   flutter test --run-skipped --tags screenshot --update-goldens test/screenshot
+  screenshot:
+    skip: "run explicitly with --tags screenshot"
+
+  # Layout measurements across breakpoints. These report numbers rather than
+  # assert on them, so they stay out of the normal suite. Run with:
+  #   flutter test --run-skipped --tags audit test/layout_audit_test.dart
+  audit:
+    skip: "run explicitly with --tags audit"

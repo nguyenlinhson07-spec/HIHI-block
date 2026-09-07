@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 21+ launch window. Deliberately the same dark ground as the v-less
+     drawable rather than ?android:colorBackground, which follows the system
+     theme and turns white in light mode. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/hihi_background" />
+
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/splash_logo" />
+    </item>
+</layer-list>
