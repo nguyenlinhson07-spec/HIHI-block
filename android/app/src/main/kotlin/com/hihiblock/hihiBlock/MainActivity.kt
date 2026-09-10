@@ -1,4 +1,4 @@
-package com.hihiblock.game
+package com.hihiblock.hihiBlock
 
 import io.flutter.embedding.android.FlutterActivity
 

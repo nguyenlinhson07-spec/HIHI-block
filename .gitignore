@@ -44,5 +44,14 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Signing material. android/.gitignore already covers the android/ folder;
+# these rules catch a keystore left anywhere else in the repo.
+# Never commit these — a leaked upload key cannot be rotated on Play without
+# Google's help.
+android/key.properties
+key.properties
+*.jks
+*.keystore
+
 # Golden screenshots are committed intentionally
 !test/screenshot/goldens/
